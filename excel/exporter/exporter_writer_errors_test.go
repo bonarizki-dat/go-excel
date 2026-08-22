@@ -116,16 +116,20 @@ func TestExporter_ExportToWriter_WriteError(t *testing.T) {
 
 // TestExporter_ExportToFile_InvalidDirectory tests directory creation failure.
 func TestExporter_ExportToFile_InvalidDirectory(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("Skipping test when running as root")
-	}
-
 	ctx := context.Background()
 	data := [][]any{{"test"}}
 
-	// Try to write to a path that should fail
-	// Use /dev/null/test.xlsx which can't have children
-	filename := "/dev/null/impossible/test.xlsx"
+	// A regular file can't have children on any OS, so nesting a path
+	// underneath one deterministically fails os.MkdirAll everywhere -
+	// unlike "/dev/null/..." (Unix-only: MkdirAll silently succeeds on
+	// Windows since that path has no special meaning there), this
+	// doesn't depend on OS quirks, root/admin privilege, or file
+	// permission enforcement.
+	blocker := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	filename := filepath.Join(blocker, "impossible", "test.xlsx")
 
 	exp := exporter.NewExporter(data)
 	err := exp.ExportToFile(ctx, filename)

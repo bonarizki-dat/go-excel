@@ -95,18 +95,36 @@ into `testdata/corpus/`, not on coverage or time alone.
   the returned slice corrupted the importer's own state — unlike
   `GetRows()`, which already returned a copy. Both now return a copy.
 - **CI failed on `windows-latest` for the `v0.3.0` tag** (caught within
-  minutes of pushing it): the repo had no `.gitattributes`, so
-  `windows-latest` runners' default `core.autocrlf=true` rewrote LF to
-  CRLF on checkout for every file git treats as text, including
-  `testdata/corpus/quoted_newline.csv` — corrupting the embedded `\n`
-  inside its quoted field that `TestCorpus_CSV_QuotedNewline_PreservesEmbeddedNewline`
-  compares byte-for-byte. Added `.gitattributes`: `* text=auto eol=lf`
-  normalizes every text file to LF on checkout regardless of platform,
-  and `testdata/corpus/*.csv -text` additionally opts those fixtures
-  out of any text conversion entirely, since their exact bytes (also
-  including `bom.csv`'s leading UTF-8 BOM) are what the corpus tests
-  assert against. `ubuntu-latest` and `macos-latest` were unaffected —
-  their default `core.autocrlf` is `false`.
+  minutes of pushing it), for three unrelated reasons — all pre-existing
+  latent bugs never caught before, since this was the first time this
+  suite's full `go test -race ./...` had ever actually run on Windows:
+  - No `.gitattributes` existed, so `windows-latest` runners' default
+    `core.autocrlf=true` rewrote LF to CRLF on checkout for every file
+    git treats as text, including `testdata/corpus/quoted_newline.csv`
+    — corrupting the embedded `\n` inside its quoted field that
+    `TestCorpus_CSV_QuotedNewline_PreservesEmbeddedNewline` compares
+    byte-for-byte. Added `.gitattributes`: `* text=auto eol=lf`
+    normalizes every text file to LF on checkout regardless of
+    platform, and `testdata/corpus/*.csv -text` additionally opts
+    those fixtures out of any text conversion entirely, since their
+    exact bytes (also including `bom.csv`'s leading UTF-8 BOM) are
+    what the corpus tests assert against.
+  - `TestExporter_ExportToFile_InvalidDirectory` relied on
+    `/dev/null/impossible/test.xlsx` to force `os.MkdirAll` to fail —
+    a Unix-only trick; that path has no special meaning on Windows, so
+    `MkdirAll` just created it and the export succeeded instead of
+    failing. It now nests the target path under a plain file (which
+    can't have children on any OS), so the failure is deterministic
+    everywhere without depending on OS quirks or root/admin privilege.
+  - `TestImportCSVFile_OpenFailure` wrote a fixture with permission
+    `0o000` expecting `Open` to fail; Windows doesn't enforce POSIX
+    permission bits the same way, so the file stayed readable and the
+    test failed. It's now skipped on `windows`.
+  `ubuntu-latest` and `macos-latest` were unaffected by the first
+  issue — their default `core.autocrlf` is `false` — but would have
+  hit the same two permission/path bugs had they run as non-root under
+  different circumstances; they happened to pass because CI runs as a
+  non-root user with a real `/dev` on both.
 
 ### Added
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/bonarizki-dat/go-excel/excel"
@@ -90,6 +91,9 @@ func TestImportXLSXFile_ImportFailure(t *testing.T) {
 // os.Stat succeeds) but cannot be opened for reading (permission
 // denied) surfaces an Open error.
 func TestImportCSVFile_OpenFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce POSIX file permission bits the same way; a 0o000 file is still readable there")
+	}
 	if os.Getuid() == 0 {
 		t.Skip("running as root bypasses file permission checks")
 	}
