@@ -94,6 +94,19 @@ into `testdata/corpus/`, not on coverage or time alone.
   returned the internal headings slice directly**, so a caller mutating
   the returned slice corrupted the importer's own state — unlike
   `GetRows()`, which already returned a copy. Both now return a copy.
+- **CI failed on `windows-latest` for the `v0.3.0` tag** (caught within
+  minutes of pushing it): the repo had no `.gitattributes`, so
+  `windows-latest` runners' default `core.autocrlf=true` rewrote LF to
+  CRLF on checkout for every file git treats as text, including
+  `testdata/corpus/quoted_newline.csv` — corrupting the embedded `\n`
+  inside its quoted field that `TestCorpus_CSV_QuotedNewline_PreservesEmbeddedNewline`
+  compares byte-for-byte. Added `.gitattributes`: `* text=auto eol=lf`
+  normalizes every text file to LF on checkout regardless of platform,
+  and `testdata/corpus/*.csv -text` additionally opts those fixtures
+  out of any text conversion entirely, since their exact bytes (also
+  including `bom.csv`'s leading UTF-8 BOM) are what the corpus tests
+  assert against. `ubuntu-latest` and `macos-latest` were unaffected —
+  their default `core.autocrlf` is `false`.
 
 ### Added
 

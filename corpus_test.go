@@ -24,6 +24,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -395,7 +396,7 @@ func buildMultiSheetWeirdAndEmptyFixture(t *testing.T) (path, weirdSheetName str
 	}
 	// Deliberately no cells written to "Empty".
 
-	path = t.TempDir() + "/multisheet_weird_and_empty.xlsx"
+	path = filepath.Join(t.TempDir(), "multisheet_weird_and_empty.xlsx")
 	if err := f.SaveAs(path); err != nil {
 		t.Fatalf("SaveAs: %v", err)
 	}

@@ -1,0 +1,13 @@
+# Normalize line endings on checkout so text content is byte-identical
+# across platforms. windows-latest GitHub Actions runners ship with
+# core.autocrlf=true by default, which otherwise rewrites LF to CRLF for
+# any file git treats as text - silently breaking exact byte/string
+# comparisons in tests.
+* text=auto eol=lf
+
+# testdata/corpus/*.csv fixtures are compared byte-for-byte in
+# corpus_test.go (a leading UTF-8 BOM, an embedded newline inside a
+# quoted field, exact delimiters). Mark them binary so git never
+# reinterprets or converts them, regardless of platform or a
+# contributor's local core.autocrlf setting.
+testdata/corpus/*.csv -text
