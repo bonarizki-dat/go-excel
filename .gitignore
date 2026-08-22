@@ -1,0 +1,84 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE directories
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local AI assistant / editor agent config
+.claude/
+.claudeignore
+.clauderules
+.cursor/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build output
+bin/
+dist/
+build/
+
+# Profiling files
+*.prof
+*.trace
+
+# Benchmark files
+*.bench
+old.bench
+new.bench
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.txt
+
+# Large test files (keep small samples only)
+testdata/large/
+testdata/*.xlsx
+testdata/*.xls
+!testdata/sample.xlsx
+!testdata/sample.csv
+
+# Excel files produced by running examples/tests at the repo root
+/*.xlsx
+/*.xls
+
+# Compiled binaries left at the repo root by `go build ./examples/...`
+# without an output path (matches the package directory name).
+/merge_cells
+/web_export
+/basic_export
+/basic_import
+/multisheet
+/struct_mapping
+/styling
+/events
+
+# CI/CD artifacts
+.github/workflows/*.log
+
+# Dependencies graph
+deps.svg

@@ -1,0 +1,230 @@
+# golangci-lint v2 configuration for Go Excel Library.
+# High-performance, strict code quality standards.
+version: "2"
+
+run:
+  # Timeout for analysis.
+  timeout: 5m
+
+  # Include test files in analysis.
+  tests: true
+
+# Output configuration.
+output:
+  formats:
+    text:
+      # Output path: stdout, stderr, or a file path.
+      path: stdout
+      # Print lines of code with issue.
+      print-issued-lines: true
+      # Print linter name at the end of issue text.
+      print-linter-name: true
+      # Use colors.
+      colors: true
+
+# Linters configuration.
+linters:
+  # Enable specific linters.
+  enable:
+    # Enabled by default upstream, listed explicitly for clarity.
+    # staticcheck absorbs the former gosimple and stylecheck linters as
+    # of golangci-lint v2 (they are no longer separate linter names);
+    # its settings below cover what stylecheck used to configure.
+    - errcheck      # Check for unchecked errors.
+    - govet         # Vet examines Go source code.
+    - ineffassign   # Detect ineffectual assignments.
+    - staticcheck   # Advanced Go linting (staticcheck + gosimple + stylecheck).
+    - unused        # Check for unused code.
+
+    # Performance and optimization.
+    - prealloc      # Find slice declarations that could be preallocated.
+    - bodyclose     # Check HTTP response body is closed.
+    - noctx         # Find sending HTTP request without context.Context.
+
+    # Code quality.
+    - misspell      # Find misspelled English words.
+    - unconvert     # Remove unnecessary type conversions.
+    - unparam       # Find unused function parameters.
+    - gocyclo       # Cyclomatic complexity.
+    - gocognit      # Cognitive complexity.
+    - nestif        # Report deeply nested if statements.
+
+    # Bugs and correctness.
+    - gocritic      # Go source code linter with many checks.
+    - errorlint     # Error wrapping issues.
+    - nilerr        # Find code returning nil with non-nil error.
+    - nilnil        # Check there is no simultaneous return of nil error and nil value.
+
+    # Style.
+    - revive        # Fast, configurable, extensible linter.
+    - godot         # Check comments end in a period.
+    - whitespace    # Detect leading/trailing whitespace issues.
+
+    # Comments and docs.
+    - godox         # Detect TODO/FIXME/BUG comments.
+    - goheader      # Check file headers.
+
+  # Disable specific linters.
+  disable:
+    - depguard         # Dependency restrictions (too strict for libraries).
+    - exhaustive       # Exhaustiveness checks (can be too strict).
+    - funlen            # Function length (gocyclo/gocognit cover the cases that matter).
+    - gochecknoglobals # Global variables (sometimes needed for pooling).
+    - gochecknoinits   # Init functions (sometimes needed).
+    - lll               # Line length (handled by formatter).
+
+  # Linter-specific settings (was top-level `linters-settings` in v1).
+  settings:
+    # Cyclomatic complexity limit.
+    gocyclo:
+      min-complexity: 15
+
+    # Cognitive complexity limit.
+    gocognit:
+      min-complexity: 20
+
+    # Nesting depth limit.
+    nestif:
+      min-complexity: 5
+
+    # Error formatting.
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+
+    # Code criticism settings.
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - experimental
+        - opinionated
+      disabled-checks:
+        - whyNoLint       # Require why in nolint comments.
+        - unnamedResult    # Named results can reduce readability sometimes.
+
+    # Revive settings.
+    revive:
+      confidence: 0.8
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    # staticcheck settings. Initialisms and dot-import-whitelist are the
+    # options that used to belong to the now-merged stylecheck linter.
+    staticcheck:
+      checks: ["all"]
+      dot-import-whitelist: []
+      initialisms: ["ACL", "API", "ASCII", "CPU", "CSS", "DNS", "EOF", "GUID", "HTML", "HTTP", "HTTPS", "ID", "IP", "JSON", "QPS", "RAM", "RPC", "SLA", "SMTP", "SQL", "SSH", "TCP", "TLS", "TTL", "UDP", "UI", "GID", "UID", "UUID", "URI", "URL", "UTF8", "VM", "XML", "XMPP", "XSRF", "XSS", "XLSX", "CSV"]
+
+    # Misspell settings.
+    misspell:
+      locale: US
+
+    # Unused parameters.
+    unparam:
+      check-exported: true
+
+    # Preallocation.
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: true
+
+  # Exclusion rules (was `run.skip-dirs`, `run.skip-files`, and `issues.exclude-rules` in v1).
+  exclusions:
+    # Log a warning if an exclusion path or rule is unused.
+    warn-unused: true
+
+    # Directories and file patterns excluded from analysis.
+    paths:
+      - vendor
+      - testdata
+      - ".*\\.gen\\.go$"
+      - ".*_gen\\.go$"
+
+    # Per-path, per-linter exclusion rules.
+    rules:
+      # Exclude some linters from running on test files. Table-driven
+      # tests and long assertion sequences routinely trip complexity
+      # metrics without being genuinely hard to follow, so gocognit and
+      # nestif join gocyclo here.
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - gocognit
+          - nestif
+          - errcheck
+          - dupl
+          - gosec
+          - gocritic
+
+      # Exclude some staticcheck messages.
+      - linters:
+          - staticcheck
+        text: "SA9003:"
+
+      # Exclude lll issues for long lines with go:generate.
+      - linters:
+          - lll
+        source: "^//go:generate "
+
+# Formatters configuration (gofmt/goimports moved out of `linters` in v2).
+formatters:
+  enable:
+    - gofmt      # Check code is gofmt-ed.
+    - goimports  # Check import ordering.
+
+  exclusions:
+    paths:
+      - vendor
+      - testdata
+
+# Issues configuration.
+issues:
+  # Maximum issues count per linter (0 = unlimited).
+  max-issues-per-linter: 0
+
+  # Maximum count of issues with the same text (0 = unlimited).
+  max-same-issues: 0
+
+  # Fix found issues automatically, if supported by the linter.
+  fix: false
+
+# Severity configuration.
+severity:
+  # Default severity level.
+  default: error
+
+  # Custom severity rules.
+  rules:
+    - linters:
+        - errcheck
+      severity: error
+    - linters:
+        - godox
+      severity: warning
