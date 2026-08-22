@@ -128,3 +128,48 @@ func TestPipeline_BackpressureHandling(t *testing.T) {
 		t.Errorf("Expected %d items, got %d", itemCount, count)
 	}
 }
+
+// TestPipeline_Stop_WaitsOutConsumerSlowerThanGracePeriod pins down the
+// distinction Stop() has to make between a consumer that is slow and
+// one that has stopped reading: this consumer takes several times
+// stopGracePeriod to finish draining, but never pauses for a whole
+// grace period at once, so Stop() owes it every item.
+//
+// Regression test: while the grace period ran as a fixed deadline from
+// the moment Stop() was called, it expired mid-drain and every item
+// still buffered was discarded.
+func TestPipeline_Stop_WaitsOutConsumerSlowerThanGracePeriod(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	p := New(ctx)
+	p.AddStage("passthrough", func(_ context.Context, data any) (any, error) {
+		return data, nil
+	}, 1)
+	p.Start()
+
+	// Enough items to overflow every buffer, so a large batch is still
+	// in flight by the time Stop() runs.
+	itemCount := 5 * p.backpressureSize
+	go func() {
+		for i := range itemCount {
+			p.Input() <- i
+		}
+		p.Stop()
+	}()
+
+	// Pause for well under a grace period every 100 items. Draining
+	// all of them takes far longer than stopGracePeriod in total.
+	pause := stopGracePeriod / 5
+	count := 0
+	for range p.Output() {
+		count++
+		if count%100 == 0 {
+			time.Sleep(pause)
+		}
+	}
+
+	if count != itemCount {
+		t.Errorf("drained %d of %d items; Stop() abandoned in-flight items instead of waiting for a slow but active consumer", count, itemCount)
+	}
+}

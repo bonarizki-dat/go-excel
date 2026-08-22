@@ -94,6 +94,23 @@ into `testdata/corpus/`, not on coverage or time alone.
   returned the internal headings slice directly**, so a caller mutating
   the returned slice corrupted the importer's own state — unlike
   `GetRows()`, which already returned a copy. Both now return a copy.
+- **`internal/pipeline.Stop()` discarded in-flight items whenever
+  draining took longer than `stopGracePeriod` in total.** The grace
+  period ran as a fixed 250ms deadline measured from the moment
+  `Stop()` was called, but it was only ever meant to catch a caller who
+  had stopped reading `Output()`. A consumer that kept draining, just
+  slowly enough that the whole drain outlasted the deadline, tripped it
+  too: `Stop()` closed `p.stopping`, and `forwardOutput` and
+  `runStageWorker` abandoned everything still buffered. Surfaced as a
+  flaky `TestPipeline_BackpressureHandling` (5000 items sent, 4900
+  received on a `macos-latest` runner) — its consumer sleeps 10ms every
+  100 items, so all 5000 items take ~500ms to drain against a deadline
+  that expired ~250ms in. The grace period is now an inactivity window:
+  `Stop()` only gives up after a full `stopGracePeriod` in which no
+  item moved anywhere in the pipeline, so a slow but active consumer
+  gets as long as it needs while a genuinely wedged pipeline still
+  cannot hang `Stop()` forever. Regression test:
+  `TestPipeline_Stop_WaitsOutConsumerSlowerThanGracePeriod`.
 - **CI failed on `windows-latest` for the `v0.3.0` tag** (caught within
   minutes of pushing it), for three unrelated reasons — all pre-existing
   latent bugs never caught before, since this was the first time this

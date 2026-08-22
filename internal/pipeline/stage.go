@@ -69,16 +69,30 @@ func (p *Pipeline) runStageWorker(stage *Stage) {
 				continue
 			}
 
-			select {
-			case stage.outputChan <- result:
-			case <-p.ctx.Done():
-				return
-			case <-p.stopping:
-				// Stop() gave up waiting for a graceful drain;
-				// abandon this result rather than block forever.
+			if !p.send(stage.outputChan, result) {
 				return
 			}
 		}
+	}
+}
+
+// send hands value to ch under normal backpressure: it blocks for as
+// long as a downstream consumer keeps draining, however slowly. It
+// reports false, discarding value, once the pipeline's context is
+// canceled or Stop() has given up on a channel nobody is draining —
+// the only two cases where blocking here would never end.
+//
+// Every successful hand-off bumps the progress counter Stop() uses to
+// tell a draining pipeline from a wedged one; see awaitDrain.
+func (p *Pipeline) send(ch chan<- any, value any) bool {
+	select {
+	case ch <- value:
+		atomic.AddUint64(&p.progress, 1)
+		return true
+	case <-p.ctx.Done():
+		return false
+	case <-p.stopping:
+		return false
 	}
 }
 
@@ -99,14 +113,7 @@ func (p *Pipeline) forwardOutput(stageChan chan any) {
 				return
 			}
 
-			select {
-			case p.outputChan <- data:
-			case <-p.ctx.Done():
-				return
-			case <-p.stopping:
-				// Stop() gave up waiting for the caller to drain
-				// Output(); abandon this item rather than block
-				// forever and keep Stop() from ever returning.
+			if !p.send(p.outputChan, data) {
 				return
 			}
 		}

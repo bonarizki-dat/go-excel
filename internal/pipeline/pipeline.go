@@ -9,11 +9,13 @@ import (
 	"github.com/bonarizki-dat/go-excel/internal/concurrency"
 )
 
-// stopGracePeriod bounds how long Stop() waits for stage and forwarder
-// goroutines to finish draining naturally before assuming nobody is
-// reading Output() (or Errors(), though that channel never blocks a
-// sender) and forcing stuck senders to give up. Mirrors WorkerPool's
-// stopGracePeriod in internal/concurrency/worker.go.
+// stopGracePeriod is how long the pipeline may sit completely idle
+// during Stop(), with no item moving anywhere, before Stop() concludes
+// nobody is reading Output() (or Errors(), though that channel never
+// blocks a sender) and forces stuck senders to give up. It is an
+// inactivity window, not a deadline on the whole shutdown, so a
+// consumer that keeps draining has as long as it needs. Mirrors
+// WorkerPool's stopGracePeriod in internal/concurrency/worker.go.
 const stopGracePeriod = 250 * time.Millisecond
 
 // Pipeline is a generic multi-stage concurrent processing primitive:
@@ -82,6 +84,11 @@ type Pipeline struct {
 	// callers who do not drain Errors() promptly can still detect that
 	// errors were lost, instead of dropping them in total silence.
 	droppedErrors uint64
+
+	// progress counts items handed off to a stage's output channel or
+	// to outputChan. Stop() watches it to tell a pipeline that is
+	// still draining, however slowly, from one that has wedged.
+	progress uint64
 }
 
 // Stage and StageFunc are defined in stage.go
@@ -200,13 +207,17 @@ func (p *Pipeline) Errors() <-chan error {
 // workers. Should be called when no more data will be sent.
 //
 // If the caller keeps reading Output() until it closes, which is the
-// expected usage, every stage and the output forwarder finish well
-// within stopGracePeriod. That grace period exists purely so Stop()
-// cannot hang forever if the caller stopped draining Output() (or a
-// stage's downstream neighbor stopped draining its input) before
-// calling Stop(); without it, forwardOutput or runStageWorker blocked
-// on a full, undrained channel would keep p.wg from ever reaching
-// zero. Safe to call multiple times; only the first call has effect.
+// expected usage, Stop() waits for every buffered item to reach the
+// caller no matter how long that takes. The stopGracePeriod escape
+// hatch exists purely so Stop() cannot hang forever if the caller
+// stopped draining Output() (or a stage's downstream neighbor stopped
+// draining its input) before calling Stop(); without it, forwardOutput
+// or runStageWorker blocked on a full, undrained channel would keep
+// p.wg from ever reaching zero. A StageFunc that takes longer than
+// stopGracePeriod to process a single item looks the same as a wedge
+// from the outside, so pipelines built from stages that slow can still
+// lose in-flight items on Stop(). Safe to call multiple times; only
+// the first call has effect.
 func (p *Pipeline) Stop() {
 	p.stopOnce.Do(func() {
 		// Close input channel to signal first stage to exit
@@ -221,10 +232,7 @@ func (p *Pipeline) Stop() {
 			close(done)
 		}()
 
-		select {
-		case <-done:
-			// All stages and the forwarder exited on their own.
-		case <-time.After(stopGracePeriod):
+		if !p.awaitDrain(done) {
 			// Something is still blocked sending to a channel nobody
 			// is draining. Unblock it and wait for the rest.
 			close(p.stopping)
@@ -237,6 +245,38 @@ func (p *Pipeline) Stop() {
 		close(p.outputChan)
 		close(p.errorChan)
 	})
+}
+
+// awaitDrain waits for done, reporting whether the pipeline drained on
+// its own. It gives up once a full stopGracePeriod passes without a
+// single item moving anywhere, which is what a caller who stopped
+// reading Output() looks like from here.
+//
+// The window has to be measured against that progress rather than
+// against the moment Stop() was called: a consumer that drains
+// steadily but takes longer than stopGracePeriod in total is doing
+// exactly what backpressure asks of it, and a fixed deadline would
+// expire mid-drain and discard every item still in flight.
+func (p *Pipeline) awaitDrain(done <-chan struct{}) bool {
+	timer := time.NewTimer(stopGracePeriod)
+	defer timer.Stop()
+
+	last := atomic.LoadUint64(&p.progress)
+
+	for {
+		select {
+		case <-done:
+			return true
+
+		case <-timer.C:
+			current := atomic.LoadUint64(&p.progress)
+			if current == last {
+				return false
+			}
+			last = current
+			timer.Reset(stopGracePeriod)
+		}
+	}
 }
 
 // DroppedErrors returns the number of stage errors discarded because
